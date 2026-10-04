@@ -1,0 +1,8 @@
+export { default as OverviewPage } from "./OverviewPage"
+export { default as InboxPage } from "./InboxPage"
+export { default as AgentsPage } from "./AgentsPage"
+export { default as KnowledgePage } from "./KnowledgePage"
+export { default as TicketsPage } from "./TicketsPage"
+export { default as CustomersPage } from "./CustomersPage"
+export { default as AnalyticsPage } from "./AnalyticsPage"
+export { default as SettingsPage } from "./SettingsPage"

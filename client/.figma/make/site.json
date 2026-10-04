@@ -1,0 +1,10 @@
+{
+  "description": "Streamlines AI-powered customer support with advanced ticketing, analytics, and knowledge management for enterprises seeking efficient service.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
