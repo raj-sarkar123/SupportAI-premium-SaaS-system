@@ -5,7 +5,7 @@ import prisma from "../lib/prisma.js"
 
 export interface JwtPayload {
   userId: string
-  workspaceId?: string
+  workspaceId: string
   role?: string
 }
 
@@ -24,7 +24,7 @@ declare global {
   }
 }
 
-export async function authenticate(
+export async function requireWorkspace(
   req: Request,
   res: Response,
   next: NextFunction,
@@ -37,7 +37,18 @@ export async function authenticate(
       return
     }
 
-    const payload = jwt.verify(token, config.jwt.secret) as JwtPayload
+    let payload: JwtPayload
+    try {
+      payload = jwt.verify(token, config.jwt.secret) as JwtPayload
+    } catch {
+      res.status(401).json({ message: "Invalid or expired token" })
+      return
+    }
+
+    if (!payload.userId || !payload.workspaceId) {
+      res.status(401).json({ message: "Invalid token payload" })
+      return
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
@@ -49,72 +60,28 @@ export async function authenticate(
       return
     }
 
+    // Load the user's membership from the database for the workspace in the token
+    const member = await prisma.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId: payload.workspaceId,
+          userId: user.id,
+        },
+      },
+    })
+
+    // Return 403 if the user is not a member
+    if (!member) {
+      res.status(403).json({ message: "Not a member of this workspace" })
+      return
+    }
+
     req.user = {
       ...user,
-      role: payload.role,
+      role: member.role,
     }
-    req.workspaceId = payload.workspaceId
-    req.memberRole = payload.role
-    next()
-  } catch {
-    res.status(401).json({ message: "Invalid or expired token" })
-  }
-}
-
-export async function loadWorkspaceMembership(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  try {
-    if (!req.user) {
-      res.status(401).json({ message: "Authentication required" })
-      return
-    }
-
-    const headerWorkspaceId = Array.isArray(req.headers["x-workspace-id"])
-      ? req.headers["x-workspace-id"][0]
-      : req.headers["x-workspace-id"]
-
-    const paramWorkspaceId = Array.isArray(req.params.workspaceId)
-      ? req.params.workspaceId[0]
-      : req.params.workspaceId
-
-    const targetWorkspaceId: string | undefined =
-      headerWorkspaceId ||
-      (typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined) ||
-      paramWorkspaceId ||
-      req.workspaceId
-
-    let member = null
-    if (targetWorkspaceId) {
-      member = await prisma.workspaceMember.findUnique({
-        where: {
-          workspaceId_userId: {
-            workspaceId: targetWorkspaceId,
-            userId: req.user.id,
-          },
-        },
-      })
-    }
-
-    if (!member) {
-      member = await prisma.workspaceMember.findFirst({
-        where: { userId: req.user.id },
-        orderBy: { joinedAt: "asc" },
-      })
-    }
-
-    if (!member) {
-      res.status(403).json({ message: "No workspace membership found" })
-      return
-    }
-
     req.workspaceId = member.workspaceId
     req.memberRole = member.role
-    if (req.user) {
-      req.user.role = member.role
-    }
 
     next()
   } catch (error) {
@@ -122,31 +89,20 @@ export async function loadWorkspaceMembership(
   }
 }
 
-export const loadWorkspace = loadWorkspaceMembership
+// Aliases for backwards compatibility
+export const authenticate = requireWorkspace
+export const loadWorkspaceMembership = requireWorkspace
+export const loadWorkspace = requireWorkspace
 
 export function requireRole(...roles: string[]) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user || !req.memberRole) {
       res.status(401).json({ message: "Authentication required" })
       return
     }
 
-    let role = req.memberRole
-    if (!role) {
-      const member = await prisma.workspaceMember.findFirst({
-        where: {
-          userId: req.user.id,
-          ...(req.workspaceId ? { workspaceId: req.workspaceId } : {}),
-        },
-      })
-      if (member) {
-        req.workspaceId = member.workspaceId
-        req.memberRole = member.role
-        role = member.role
-      }
-    }
-
-    if (!role || !roles.includes(role)) {
+    // Must use req.memberRole loaded from the database, never the JWT role
+    if (!roles.includes(req.memberRole)) {
       res.status(403).json({ message: "Insufficient permissions" })
       return
     }

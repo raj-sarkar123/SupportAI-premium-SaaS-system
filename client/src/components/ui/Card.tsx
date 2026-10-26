@@ -1,14 +1,10 @@
-import type { ReactNode } from "react"
+import type { HTMLAttributes } from "react"
 
-export interface CardProps {
-  children: ReactNode
-  className?: string
-  onClick?: () => void
-}
+export interface CardProps extends HTMLAttributes<HTMLDivElement> {}
 
-export default function Card({ children, className = "", onClick }: CardProps) {
+export default function Card({ children, className = "", ...props }: CardProps) {
   return (
-    <div className={`card ${className}`} onClick={onClick}>
+    <div className={`card ${className}`.trim()} {...props}>
       {children}
     </div>
   )

@@ -1,9 +1,22 @@
 import { PrismaClient } from "@prisma/client"
 import bcrypt from "bcryptjs"
+import dotenv from "dotenv"
+
+dotenv.config()
+
+if (process.env.NODE_ENV === "production") {
+  console.error("❌ Refusing to run seed in production (NODE_ENV=production)")
+  process.exit(1)
+}
 
 const prisma = new PrismaClient()
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("❌ Refusing to run seed in production (NODE_ENV=production)")
+    process.exit(1)
+  }
+
   const email = "admin@supportai.demo"
   const password = "Password123!"
   const passwordHash = await bcrypt.hash(password, 12)

@@ -4,7 +4,7 @@ import jwt, { type SignOptions } from "jsonwebtoken"
 import { config } from "../config.js"
 import prisma from "../lib/prisma.js"
 import { validate } from "../middleware/validate.js"
-import { authenticate, loadWorkspaceMembership } from "../middleware/auth.js"
+import { requireWorkspace } from "../middleware/auth.js"
 import { signupSchema, loginSchema } from "../validators/auth.js"
 import type { JwtPayload } from "../middleware/auth.js"
 
@@ -40,26 +40,30 @@ router.post("/signup", validate(signupSchema), async (req, res, next) => {
 
     const passwordHash = await bcrypt.hash(password, 12)
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        passwordHash,
-      },
-      select: { id: true, email: true, name: true },
-    })
+    // Create user, workspace and membership in one prisma.$transaction
+    const { user, workspace } = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          name,
+          email,
+          passwordHash,
+        },
+        select: { id: true, email: true, name: true },
+      })
 
-    // Create a default workspace for the new user
-    const workspace = await prisma.workspace.create({
-      data: {
-        name: `${name}'s Workspace`,
-        members: {
-          create: {
-            userId: user.id,
-            role: "admin",
+      const newWorkspace = await tx.workspace.create({
+        data: {
+          name: `${name}'s Workspace`,
+          members: {
+            create: {
+              userId: newUser.id,
+              role: "admin",
+            },
           },
         },
-      },
+      })
+
+      return { user: newUser, workspace: newWorkspace }
     })
 
     const token = createToken(user.id, workspace.id, "admin")
@@ -104,9 +108,15 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
       return
     }
 
+    // Return a 403 error if the user has no workspace membership
     const membership = user.workspaces[0]
-    const workspaceId = membership ? membership.workspaceId : ""
-    const role = membership ? membership.role : "agent"
+    if (!membership) {
+      res.status(403).json({ message: "User is not a member of any workspace" })
+      return
+    }
+
+    const workspaceId = membership.workspaceId
+    const role = membership.role
 
     const token = createToken(user.id, workspaceId, role)
     setTokenCookie(res, token)
@@ -133,14 +143,14 @@ router.post("/logout", (_req, res) => {
 })
 
 // GET /api/auth/me
-router.get("/me", authenticate, loadWorkspaceMembership, (req, res) => {
+router.get("/me", requireWorkspace, (req, res) => {
   res.json({
     user: {
       id: req.user!.id,
       email: req.user!.email,
       name: req.user!.name,
-      role: req.memberRole || req.user?.role || "agent",
-      workspaceId: req.workspaceId,
+      role: req.memberRole!,
+      workspaceId: req.workspaceId!,
     },
     workspaceId: req.workspaceId,
   })
