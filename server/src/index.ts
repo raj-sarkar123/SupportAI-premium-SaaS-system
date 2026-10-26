@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser"
 import { config } from "./config.js"
 import { errorHandler } from "./middleware/errorHandler.js"
 import authRoutes from "./routes/auth.js"
+import knowledgeRoutes from "./routes/knowledge.js"
 
 const app = express()
 
@@ -23,6 +24,7 @@ app.get("/api/health", (_req, res) => {
 })
 
 app.use("/api/auth", authRoutes)
+app.use("/api/knowledge", knowledgeRoutes)
 
 // ── Error handling ─────────────────────────────────────
 app.use(errorHandler)

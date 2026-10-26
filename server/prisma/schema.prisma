@@ -12,10 +12,24 @@ enum Role {
   agent
 }
 
+enum SourceType {
+  document
+  website
+  faq
+}
+
+enum SourceStatus {
+  processing
+  ready
+  failed
+}
+
 model Workspace {
   id        String            @id @default(cuid())
   name      String
   members   WorkspaceMember[]
+  sources   Source[]
+  chunks    Chunk[]
   createdAt DateTime          @default(now()) @map("created_at")
   updatedAt DateTime          @updatedAt @map("updated_at")
 
@@ -45,4 +59,43 @@ model WorkspaceMember {
 
   @@unique([workspaceId, userId])
   @@map("workspace_members")
+}
+
+model Source {
+  id           String       @id @default(cuid())
+  workspaceId  String       @map("workspace_id")
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  type         SourceType
+  status       SourceStatus @default(processing)
+  title        String
+  url          String?
+  content      String?      @db.Text
+  category     String?      @default("General")
+  fileSize     Int?         @map("file_size")
+  mimeType     String?      @map("mime_type")
+  errorMessage String?      @map("error_message")
+  chunks       Chunk[]
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@index([workspaceId])
+  @@index([type])
+  @@index([status])
+  @@map("sources")
+}
+
+model Chunk {
+  id          String                       @id @default(cuid())
+  sourceId    String                       @map("source_id")
+  source      Source                       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  workspaceId String                       @map("workspace_id")
+  workspace   Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  text        String                       @db.Text
+  chunkIndex  Int                          @default(0) @map("chunk_index")
+  embedding   Unsupported("vector(1536)")?
+  createdAt   DateTime                     @default(now()) @map("created_at")
+
+  @@index([sourceId])
+  @@index([workspaceId])
+  @@map("chunks")
 }

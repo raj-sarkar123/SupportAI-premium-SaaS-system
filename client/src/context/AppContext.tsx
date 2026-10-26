@@ -45,8 +45,12 @@ interface AppContextValue {
   setCollapsed: React.Dispatch<React.SetStateAction<boolean>>
   mobileOpen: boolean
   setMobileOpen: React.Dispatch<React.SetStateAction<boolean>>
+  knowledgeRefreshKey: number
+  triggerKnowledgeRefresh: () => void
   currentConversation: Conversation
 }
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000"
 
 const AppContext = createContext<AppContextValue | null>(null)
 
@@ -69,7 +73,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     { title: string; type: "Document" | "Website" | "FAQ" }[]
   >([])
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [knowledgeRefreshKey, setKnowledgeRefreshKey] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const triggerKnowledgeRefresh = () => {
+    setKnowledgeRefreshKey((v) => v + 1)
+  }
 
   const notify = (message: string) => {
     setToast(message)
@@ -79,31 +88,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const handleFiles = (files: File[]) => {
     if (!files.length) return
     const allowed = ["pdf", "docx", "txt"]
-    if (
-      files.some(
-        (file) =>
-          file.size > 20 * 1024 * 1024 ||
-          !allowed.includes(file.name.split(".").pop()?.toLowerCase() || ""),
-      )
-    ) {
-      notify("Use PDF, DOCX, or TXT files under 20MB")
-      return
+    for (const file of files) {
+      const ext = file.name.split(".").pop()?.toLowerCase() || ""
+      if (!allowed.includes(ext)) {
+        notify(`"${file.name}" has an unsupported format. Use PDF, DOCX, or TXT.`)
+        return
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        notify(`"${file.name}" exceeds 20MB limit.`)
+        return
+      }
     }
-    setUploadProgress(15)
-    window.setTimeout(() => setUploadProgress(65), 350)
-    window.setTimeout(() => {
-      setUploadedSources((v) => [
-        ...files.map((file) => ({
-          title: file.name,
-          type: "Document" as const,
-        })),
-        ...v,
-      ])
-      setUploadProgress(null)
-      notify(
-        `${files.length} file${files.length === 1 ? "" : "s"} added to knowledge base`,
-      )
-    }, 800)
+
+    setUploadProgress(5)
+    let completedCount = 0
+    const totalFiles = files.length
+
+    const uploadSingle = (file: File): Promise<void> => {
+      return new Promise((resolve) => {
+        const formData = new FormData()
+        formData.append("file", file)
+
+        const xhr = new XMLHttpRequest()
+        xhr.open("POST", `${API_URL}/api/knowledge/upload`, true)
+        xhr.withCredentials = true
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const fileProgress = e.loaded / e.total
+            const overall = Math.round(((completedCount + fileProgress) / totalFiles) * 100)
+            setUploadProgress(Math.min(99, Math.max(5, overall)))
+          }
+        }
+
+        xhr.onload = () => {
+          completedCount++
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve()
+          } else {
+            try {
+              const res = JSON.parse(xhr.responseText)
+              notify(res.message || `Failed to upload ${file.name}`)
+            } catch {
+              notify(`Failed to upload ${file.name}`)
+            }
+            resolve()
+          }
+        }
+
+        xhr.onerror = () => {
+          completedCount++
+          notify(`Network error uploading ${file.name}`)
+          resolve()
+        }
+
+        xhr.send(formData)
+      })
+    }
+
+    ;(async () => {
+      for (const file of files) {
+        await uploadSingle(file)
+      }
+      setUploadProgress(100)
+      window.setTimeout(() => {
+        setUploadProgress(null)
+        notify(`${files.length} file${files.length === 1 ? "" : "s"} uploaded. Processing in background...`)
+        triggerKnowledgeRefresh()
+      }, 400)
+    })()
   }
 
   const currentConversation =
@@ -167,6 +220,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCollapsed,
         mobileOpen,
         setMobileOpen,
+        knowledgeRefreshKey,
+        triggerKnowledgeRefresh,
         currentConversation,
       }}
     >

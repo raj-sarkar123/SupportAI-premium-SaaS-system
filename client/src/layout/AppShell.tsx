@@ -21,6 +21,8 @@ import { agents } from "../mocks/agents"
 import { tickets } from "../mocks/tickets"
 import { conversations } from "../mocks/conversations"
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000"
+
 export default function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -43,6 +45,7 @@ export default function AppShell() {
     createdAgents,
     setCreatedAgents,
     setUploadedSources,
+    triggerKnowledgeRefresh,
     selectedTicket,
     setSelectedTicket,
     selectedCustomer,
@@ -289,6 +292,7 @@ export default function AppShell() {
                 <label>
                   Answer
                   <textarea
+                    id="new-answer"
                     placeholder="Write a clear, helpful answer..."
                     rows={5}
                   />
@@ -301,7 +305,7 @@ export default function AppShell() {
               <Button
                 variant="primary"
                 icon={activeModal === "upload" ? UploadCloud : Plus}
-                onClick={() => {
+                onClick={async () => {
                   if (activeModal === "agent") {
                     if (!draftName.trim()) {
                       notify("Please enter an agent name")
@@ -323,26 +327,57 @@ export default function AppShell() {
                       notify("Please enter a website URL")
                       return
                     }
-                    setUploadedSources((v) => [
-                      { title: value, type: "Website" },
-                      ...v,
-                    ])
-                    notify("Website added to knowledge base")
-                    navigate("/knowledge")
+                    try {
+                      const res = await fetch(`${API_URL}/api/knowledge/add-url`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        credentials: "include",
+                        body: JSON.stringify({ url: value }),
+                      })
+                      if (res.ok) {
+                        notify("Website added. Extracting content in background...")
+                        triggerKnowledgeRefresh()
+                        navigate("/knowledge")
+                      } else {
+                        const err = await res.json()
+                        notify(err.message || "Failed to add website URL")
+                      }
+                    } catch {
+                      notify("Network error adding website")
+                    }
                   } else if (activeModal === "faq") {
-                    const value = (
+                    const question = (
                       document.getElementById("new-question") as HTMLInputElement
                     )?.value
-                    if (!value) {
+                    const answer = (
+                      document.getElementById("new-answer") as HTMLTextAreaElement
+                    )?.value || ""
+                    if (!question) {
                       notify("Please enter a question")
                       return
                     }
-                    setUploadedSources((v) => [
-                      { title: value, type: "FAQ" },
-                      ...v,
-                    ])
-                    notify("FAQ added to knowledge base")
-                    navigate("/knowledge")
+                    if (!answer) {
+                      notify("Please provide an answer")
+                      return
+                    }
+                    try {
+                      const res = await fetch(`${API_URL}/api/knowledge/faq`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        credentials: "include",
+                        body: JSON.stringify({ question, answer }),
+                      })
+                      if (res.ok) {
+                        notify("FAQ created. Embedding in background...")
+                        triggerKnowledgeRefresh()
+                        navigate("/knowledge")
+                      } else {
+                        const err = await res.json()
+                        notify(err.message || "Failed to create FAQ")
+                      }
+                    } catch {
+                      notify("Network error creating FAQ")
+                    }
                   } else {
                     fileRef.current?.click()
                     notify("Choose a file to upload")

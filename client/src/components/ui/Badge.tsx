@@ -22,21 +22,29 @@ export default function Badge({
 }
 
 export function StatusBadge({ status }: { status: string }) {
+  const normalized = status.toLowerCase()
   const tone =
-    status === "Resolved" ||
-    status === "Synced" ||
-    status === "Active" ||
-    status === "AI handled"
+    normalized === "resolved" ||
+    normalized === "synced" ||
+    normalized === "active" ||
+    normalized === "ready" ||
+    normalized === "ai handled"
       ? "green"
-      : status === "Escalated" || status === "High"
-        ? "orange"
-        : status === "Open" || status === "Syncing"
-          ? "blue"
-          : "neutral"
+      : normalized === "failed" || normalized === "rose"
+        ? "rose"
+        : normalized === "escalated" || normalized === "high"
+          ? "orange"
+          : normalized === "open" ||
+              normalized === "syncing" ||
+              normalized === "processing"
+            ? "blue"
+            : "neutral"
+
+  const display = status.charAt(0).toUpperCase() + status.slice(1)
 
   return (
     <Badge tone={tone} dot>
-      {status}
+      {display}
     </Badge>
   )
 }
