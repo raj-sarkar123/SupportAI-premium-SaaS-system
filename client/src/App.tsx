@@ -7,9 +7,12 @@ import {
   OverviewPage,
   InboxPage,
   AgentsPage,
+  NewAgentPage,
   KnowledgePage,
   TicketsPage,
+  TicketDetailPage,
   CustomersPage,
+  CustomerDetailPage,
   AnalyticsPage,
   SettingsPage,
 } from "./pages"
@@ -40,12 +43,12 @@ export default function App() {
             <Route path="/overview" element={<OverviewPage />} />
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/agents" element={<AgentsPage />} />
-            <Route path="/agents/new" element={<AgentsPage />} />
+            <Route path="/agents/new" element={<NewAgentPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/tickets" element={<TicketsPage />} />
-            <Route path="/tickets/:id" element={<TicketsPage />} />
+            <Route path="/tickets/:id" element={<TicketDetailPage />} />
             <Route path="/customers" element={<CustomersPage />} />
-            <Route path="/customers/:id" element={<CustomersPage />} />
+            <Route path="/customers/:id" element={<CustomerDetailPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
             <Route path="/settings/:tab" element={<SettingsPage />} />

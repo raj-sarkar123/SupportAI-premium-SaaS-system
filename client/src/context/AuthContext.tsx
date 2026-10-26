@@ -14,6 +14,7 @@ export interface AuthUser {
   email: string
   name: string
   role: "admin" | "agent"
+  workspaceId?: string
 }
 
 interface AuthContextValue {

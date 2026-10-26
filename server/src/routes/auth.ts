@@ -1,18 +1,19 @@
 import { Router } from "express"
 import bcrypt from "bcryptjs"
-import jwt from "jsonwebtoken"
+import jwt, { type SignOptions } from "jsonwebtoken"
 import { config } from "../config.js"
 import prisma from "../lib/prisma.js"
 import { validate } from "../middleware/validate.js"
-import { authenticate } from "../middleware/auth.js"
+import { authenticate, loadWorkspaceMembership } from "../middleware/auth.js"
 import { signupSchema, loginSchema } from "../validators/auth.js"
 import type { JwtPayload } from "../middleware/auth.js"
 
 const router = Router()
 
-function createToken(userId: string, role: string): string {
-  return jwt.sign({ userId, role } satisfies JwtPayload, config.jwt.secret, {
-    expiresIn: config.jwt.expiresIn,
+function createToken(userId: string, workspaceId: string, role: string): string {
+  const payload: JwtPayload = { userId, workspaceId, role }
+  return jwt.sign(payload, config.jwt.secret, {
+    expiresIn: config.jwt.expiresIn as SignOptions["expiresIn"],
   })
 }
 
@@ -44,9 +45,8 @@ router.post("/signup", validate(signupSchema), async (req, res, next) => {
         name,
         email,
         passwordHash,
-        role: "admin",
       },
-      select: { id: true, email: true, name: true, role: true },
+      select: { id: true, email: true, name: true },
     })
 
     // Create a default workspace for the new user
@@ -62,10 +62,19 @@ router.post("/signup", validate(signupSchema), async (req, res, next) => {
       },
     })
 
-    const token = createToken(user.id, user.role)
+    const token = createToken(user.id, workspace.id, "admin")
     setTokenCookie(res, token)
 
-    res.status(201).json({ user })
+    res.status(201).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: "admin",
+        workspaceId: workspace.id,
+      },
+      workspaceId: workspace.id,
+    })
   } catch (error) {
     next(error)
   }
@@ -76,7 +85,14 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body
 
-    const user = await prisma.user.findUnique({ where: { email } })
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        workspaces: {
+          orderBy: { joinedAt: "asc" },
+        },
+      },
+    })
     if (!user) {
       res.status(401).json({ message: "Invalid email or password" })
       return
@@ -88,7 +104,11 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
       return
     }
 
-    const token = createToken(user.id, user.role)
+    const membership = user.workspaces[0]
+    const workspaceId = membership ? membership.workspaceId : ""
+    const role = membership ? membership.role : "agent"
+
+    const token = createToken(user.id, workspaceId, role)
     setTokenCookie(res, token)
 
     res.json({
@@ -96,8 +116,10 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role,
+        workspaceId,
       },
+      workspaceId,
     })
   } catch (error) {
     next(error)
@@ -111,8 +133,17 @@ router.post("/logout", (_req, res) => {
 })
 
 // GET /api/auth/me
-router.get("/me", authenticate, (req, res) => {
-  res.json({ user: req.user })
+router.get("/me", authenticate, loadWorkspaceMembership, (req, res) => {
+  res.json({
+    user: {
+      id: req.user!.id,
+      email: req.user!.email,
+      name: req.user!.name,
+      role: req.memberRole || req.user?.role || "agent",
+      workspaceId: req.workspaceId,
+    },
+    workspaceId: req.workspaceId,
+  })
 })
 
 export default router
